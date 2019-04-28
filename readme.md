@@ -33,7 +33,7 @@
                     }
                   },
                   function(resData) {
-                    weex.requireModule("bmModal").alert({
+                    weex.requireModule("bmModal").toast({
                       message:
                         resData.message == "success"
                           ? "正在下载，请稍后在通知中心查看"
@@ -57,7 +57,7 @@
                     }
                   },
                   function(resData) {
-                    weex.requireModule("bmModal").alert({
+                    weex.requireModule("bmModal").toast({
                       message:
                         resData
                     });
