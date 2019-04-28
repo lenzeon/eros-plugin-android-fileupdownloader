@@ -523,7 +523,7 @@ private void UpMultipleFileData(ArrayList<NormalFile> items) {
     private void upload(String url, String filePath, Map<String, String> uploadParams,
                         Map<String, String> heads, StringCallback callback) {
         String ContentDispositionName=uploadParams.get("ContentDispositionName");
-        uploadParams.remove("ContentDispositionName");
+        //uploadParams.remove("ContentDispositionName");
         PostFormBuilder builder = OkHttpUtils.post().url(url).params(uploadParams).headers(heads);
         String ext = AppUtils.getFileExtName(filePath);
         System.out.println(AppUtils.getFileName(filePath));
