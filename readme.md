@@ -1,26 +1,28 @@
-EROS是基于 weex 封装、面向前端的 vue 写法的一整套 APP 开源解决方案。https://github.com/bmfe/eros 
+[EROS](https://github.com/bmfe/eros)是基于 weex 封装、面向前端的 vue 写法的一整套 APP 开源解决方案。
 
-该项目对EROS框架源码进行了修改，实现了文件上传和下载功能。
+#### 该项目对EROS框架源码进行了修改，实现了文件上传和下载功能。
 
-#Tips:
+# Tips:
 
-1.	为什么不按照EROS官方文档 https://github.com/bmfe/android-eros-plugin-simple 新建插件项目？
-    之前按照官方文档创建插件项目，项目中添加该插件项目依赖后出现了依赖文件重复，SDK依赖版本不同导致build fail的情况，因此迫不得已才在框架源码上进行修改。
+## 1.为什么不按照[EROS官方文档](https://github.com/bmfe/android-eros-plugin-simple)新建插件项目？
 
-2.文件上传功能
-包括文件选择和文件上传两个部分，文件选择使用的github上的MultiType-FilePicker项目  https://github.com/fishwjy/MultiType-FilePicker
-在此对@fishwjy提出感谢，支持根据后缀名进行筛选文件，支持选择多个文件。
+之前按照官方文档创建插件项目，项目中添加该插件项目依赖后出现了依赖文件重复，SDK依赖版本不同导致build fail的情况，因此迫不得已才在框架源码上进行修改。
+
+## 2.文件上传功能
+包括文件选择和文件上传两个部分，文件选择使用的github上的[MultiType-FilePicker项目](https://github.com/fishwjy/MultiType-FilePicker)
+在此对[@fishwjy](https://github.com/fishwjy)提出感谢，支持根据后缀名进行筛选文件，支持选择多个文件。
 
 文件上传使用的是框架中图片上传使用的AxiosManager类（基于okhttp3进行封装），支持自定义header,cookie部分使用的是系统自带android.webkit.CookieSyncManager，自动添加cookie到header中。
 
-3.文件下载功能
+
+## 3.文件下载功能
 支持自定义header,自动添加cookie，调用的是系统自带的DownloadManager。不足之处是需要传入文件名（不含后缀名）和后缀名，无法根据响应header中Content-Disposition判断文件名。
 
-4.使用方法
+## 4.使用方法
 
-文件下载
+### 文件下载
 ``` javascript
-                          weex.requireModule("FileModule").downloadFile(
+                  weex.requireModule("FileModule").downloadFile(
                   {
                     url:"xxxxxxx",//下载地址
                     name:"yyyyyyy"//文件名（不含后缀名）
@@ -42,14 +44,14 @@ EROS是基于 weex 封装、面向前端的 vue 写法的一整套 APP 开源解
 ```
 
 
-文件上传
+### 文件上传
 ``` javascript
-                          weex.requireModule("FileModule").uploadFile(
+                  weex.requireModule("FileModule").uploadFile(
                   {
                     url:"xxxxxxxx",//上传地址
                     maxCount:10,//最大可选择的文件数量
                     suffix:"rar,zip,7z",//支持的文件类型
-                    params:{aaa:"bbb"},//自定义请求参数[可选]
+                    params:{aaa:"bbb"},//自定义请求参数[可选]（其中有一个必填参数,key为ContentDispositionName,用于指定POST请求中的RequestBody中的该文件对应部分的Content-Disposition中的name属性的值，参数的值应于后端协商确定，后端根据该值进行解析，参见下方图片）
                     headers: {
                       Referer:"yyyyyyy"//自定义请求头[可选]
                     }
@@ -62,24 +64,25 @@ EROS是基于 weex 封装、面向前端的 vue 写法的一整套 APP 开源解
                   }
                 );
 ```
+![image](http://bmob-cdn-17074.b0.upaiyun.com/2019/04/28/98bd93af40378b4380dc0f63e32c659e.png)
 
 
+# 具体改动的地方有以下几处：
 
-#具体改动的地方有以下几处：
+#### 修改多个build.gradle中的
+compileSdkVersion 26  targetSdkVersion 26
 
-修改多个build.gradle中的
-compileSdkVersion 26
-targetSdkVersion 26
-
-\platforms\android\WeexFrameworkWrapper\wxframework\eros-framework\build.gradle
+#### \platforms\android\WeexFrameworkWrapper\wxframework\eros-framework\build.gradle
 添加依赖
+
+```java
 dependencies{
-compile 'com.vincent.filepicker:MultiTypeFilePicker:1.0.8'
+    compile 'com.vincent.filepicker:MultiTypeFilePicker:1.0.8'
 }
+```
 
 
-
-package com.eros.framework.extend.module;
+#### package com.eros.framework.extend.module; 
 创建
 ``` java
 public class FileModule extends WXModule {
@@ -107,7 +110,7 @@ public class FileModule extends WXModule {
 
 
 
-com.eros.framework.constant.WXEventCenter
+#### com.eros.framework.constant.WXEventCenter
 添加3个事件字符串常量定义
 ``` java
 public static final String EVENT_FILE_PICK = "EVENT_FILE_PICK";
@@ -116,11 +119,67 @@ public static final String EVENT_FILE_DOWNLOAD = "EVENT_FILE_DOWNLOAD";
 ```
 
 
-package com.eros.framework.event.file; （需创建file包）
+### package com.eros.framework.event.file; （需创建file包）
 创建
 ``` java
+package com.eros.framework.event.file;
+
+import android.Manifest;
+import android.app.DownloadManager;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.Environment;
+import android.webkit.CookieManager;
+import android.webkit.CookieSyncManager;
+import android.widget.Toast;
+
+import com.eros.framework.constant.Constant;
+import com.eros.framework.constant.WXEventCenter;
+import com.eros.framework.http.okhttp.cookie.store.PersistentCookieStore;
+import com.eros.framework.manager.ManagerFactory;
+import com.eros.framework.manager.impl.FileUpdownloaderManager;
+import com.eros.framework.manager.impl.ImageManager;
+import com.eros.framework.manager.impl.ModalManager;
+import com.eros.framework.manager.impl.ParseManager;
+import com.eros.framework.manager.impl.PersistentManager;
+import com.eros.framework.manager.impl.dispatcher.DispatchEventManager;
+import com.eros.framework.model.DownloadFileBean;
+import com.eros.framework.model.ScanImageBean;
+import com.eros.framework.model.UploadFileBean;
+import com.eros.framework.model.UploadImageBean;
+import com.eros.framework.model.UploadResultBean;
+import com.eros.framework.model.WeexEventBean;
+import com.eros.framework.utils.JsPoster;
+import com.eros.framework.utils.PermissionUtils;
+import com.eros.wxbase.EventGate;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.ChecksumException;
+import com.google.zxing.FormatException;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.NotFoundException;
+import com.google.zxing.RGBLuminanceSource;
+import com.google.zxing.Reader;
+import com.google.zxing.common.HybridBinarizer;
+import com.squareup.otto.Subscribe;
+import com.taobao.weex.bridge.JSCallback;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import okhttp3.Cookie;
+import okhttp3.HttpUrl;
+
+import static android.content.Context.DOWNLOAD_SERVICE;
+
+/**
+ * Created by roger on 2019/2/1.
+ */
+
 public class EventFile extends EventGate {
-    private JSCallback mPickCallback,mUploadAvatar;
+    private JSCallback mPickCallback;
     private Context mUploadContext;
 
     @Override
@@ -141,13 +200,13 @@ public class EventFile extends EventGate {
         if (!PermissionUtils.checkPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE)) {
             return;
         }
-        mUploadAvatar = jsCallback;
+        mPickCallback = jsCallback;
         mUploadContext = context;
         UploadFileBean bean = ManagerFactory.getManagerService(ParseManager.class).parseObject
             (json, UploadFileBean.class);
         ManagerFactory.getManagerService(DispatchEventManager.class).getBus().register(this);
-        FileUpdownloaderManager fileUpdownloadManager= ManagerFactory.getManagerService(FileUpdownloaderManager.class);
-        fileUpdownloadManager.pick(context,bean,Constant.FileConstants.FILE_PICKER);
+        FileUpdownloaderManager fileUpdownloaderManager= ManagerFactory.getManagerService(FileUpdownloaderManager.class);
+        fileUpdownloaderManager.pick(context,bean,Constant.FileConstants.FILE_PICKER);
     }
 
     public void download(String json, Context context, JSCallback jsCallback) {
@@ -171,8 +230,10 @@ public class EventFile extends EventGate {
         String cookieString= "";
         for (int i = 0; i < cookies.size(); i++) {
             Cookie cookie = cookies.get(i);
+            System.out.println(cookie.name() + ":" + cookie.value()+":"+cookie.domain()+":"+cookie.path());
             if (cookie.matches(HttpUrl.parse(bean.url))) {
                 String value = cookie.name() + "=" + cookie.value();
+                System.out.println(value);
                 cookieString += (value + "; ");
                 cookieManager.setCookie(bean.url, value);
             }
@@ -248,7 +309,6 @@ public class EventFile extends EventGate {
             e.printStackTrace();
         }
         JsPoster.postFailed("fail",jsCallback);
-        //Toast.makeText(context, "下载失败", Toast.LENGTH_LONG).show();
     }
 
     @Subscribe
@@ -256,19 +316,20 @@ public class EventFile extends EventGate {
         if (uploadResultBean != null && mPickCallback != null) {
             JsPoster.postSuccess(uploadResultBean.data, mPickCallback);
         }
-
+        ModalManager.BmLoading.dismissLoading(mUploadContext);
         ManagerFactory.getManagerService(DispatchEventManager.class).getBus().unregister(this);
         mPickCallback = null;
         ManagerFactory.getManagerService(PersistentManager.class).deleteCacheData(Constant
             .FileConstants.UPLOAD_FILE_BEAN);
     }
 }
+
 ```
 
 
 
 
-package com.eros.framework.model;
+#### package com.eros.framework.model;
 创建
 ``` java
 public class UploadFileBean implements Serializable {
@@ -281,9 +342,7 @@ public class UploadFileBean implements Serializable {
 }
 ```
 
-
-
-package com.eros.framework.manager.impl;
+#### package com.eros.framework.manager.impl;
 创建
 ``` java
 public class FileUpdownloaderManager extends Manager  {
@@ -315,7 +374,7 @@ public class FileUpdownloaderManager extends Manager  {
 ```
 
 
-package com.eros.framework.adapter;
+#### package com.eros.framework.adapter;
 创建
 ``` java
 public class DefaultFileAdapter {
@@ -333,7 +392,7 @@ public class DefaultFileAdapter {
     public void pickFile(final Context context, UploadFileBean bean, int requestCode) {
         if (!checkPermission(context)) return;
         Intent intent4 = new Intent(context, NormalFilePickActivity.class);
-        intent4.putExtra(Constant.MAX_NUMBER, 9);
+        intent4.putExtra(Constant.MAX_NUMBER, bean.maxCount);
         intent4.putExtra(NormalFilePickActivity.SUFFIX, bean.suffix.split(","));
         PersistentManager persistentManager = ManagerFactory.getManagerService(PersistentManager
             .class);
@@ -400,7 +459,7 @@ public class DefaultFileAdapter {
 
 
 
-com.eros.framework.constant.Constant
+#### com.eros.framework.constant.Constant
 添加
 ``` java
 public static final class FileConstants {
@@ -410,7 +469,7 @@ public static final class FileConstants {
 ```
 
 
-package com.eros.framework.model;
+#### package com.eros.framework.model;
 创建
 ``` java
 public class DownloadFileBean implements Serializable {
@@ -426,7 +485,7 @@ public class DownloadFileBean implements Serializable {
 
 
 
-com.eros.framework.activity.AbstractWeexActivity#onActivityResult
+#### com.eros.framework.activity.AbstractWeexActivity#onActivityResult
 添加
 ``` java
 /**
@@ -440,7 +499,7 @@ if(requestCode==REQUEST_CODE_PICK_FILE&&resultCode == RESULT_OK){
 
 
 
-com.eros.framework.activity.AbstractWeexActivity
+#### com.eros.framework.activity.AbstractWeexActivity
 添加
 ``` java
 /**
@@ -458,16 +517,25 @@ private void UpMultipleFileData(ArrayList<NormalFile> items) {
 
 
 
-com.eros.framework.manager.impl.AxiosManager#upload(java.lang.String, java.lang.String, java.util.Map<java.lang.String,java.lang.String>, java.util.Map<java.lang.String,java.lang.String>, com.eros.framework.http.okhttp.callback.StringCallback)
+#### com.eros.framework.manager.impl.AxiosManager#upload
 修改为
 ``` java
-builder.addFile("file", TextUtils.isEmpty(ext) ? "file.jpg" : AppUtils.getFileName(filePath), new File
-        (filePath));
-```        
+    private void upload(String url, String filePath, Map<String, String> uploadParams,
+                        Map<String, String> heads, StringCallback callback) {
+        String ContentDispositionName=uploadParams.get("ContentDispositionName");
+        uploadParams.remove("ContentDispositionName");
+        PostFormBuilder builder = OkHttpUtils.post().url(url).params(uploadParams).headers(heads);
+        String ext = AppUtils.getFileExtName(filePath);
+        System.out.println(AppUtils.getFileName(filePath));
+        builder.addFile(ContentDispositionName, AppUtils.getFileName(filePath), new File
+                (filePath));
+        builder.build().execute(callback);
+    }
+```
     
 
 
-\platforms\android\WeexFrameworkWrapper\wxframework\eros-framework\src\main\res\xml\app_config.xml
+#### \platforms\android\WeexFrameworkWrapper\wxframework\eros-framework\src\main\res\xml\app_config.xml
 添加
 ``` xml
 <module name="FileModule">com.eros.framework.extend.module.FileModule</module>
@@ -475,7 +543,7 @@ builder.addFile("file", TextUtils.isEmpty(ext) ? "file.jpg" : AppUtils.getFileNa
 
 
 
-com.eros.framework.event.DispatchEventCenter#onWeexEvent
+#### com.eros.framework.event.DispatchEventCenter#onWeexEvent
 添加
 ``` java
             case WXEventCenter.EVENT_FILE_UPLOAD:
