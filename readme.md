@@ -51,7 +51,7 @@
                     url:"xxxxxxxx",//上传地址
                     maxCount:10,//最大可选择的文件数量
                     suffix:"rar,zip,7z",//支持的文件类型
-                    params:{aaa:"bbb"},//自定义请求参数[可选]（其中有一个必填参数,key为ContentDispositionName,用于指定POST请求中的RequestBody中的该文件对应部分的Content-Disposition中的name属性的值，参数的值应于后端协商确定，后端根据该值进行解析，参见下方图片）
+                    params:{aaa:"bbb"},//自定义请求参数[可选]（其中有一个可选参数,key为ContentDispositionName,不填的默认值为"file",用于指定POST请求中的RequestBody中的该文件对应部分的Content-Disposition中的name属性的值，参数的值应与后端协商确定，后端根据该值进行解析，参见下方图片）
                     headers: {
                       Referer:"yyyyyyy"//自定义请求头[可选]
                     }
@@ -515,25 +515,51 @@ private void UpMultipleFileData(ArrayList<NormalFile> items) {
 }
 ```
 
-
+#### com.eros.framework.manager.impl.AxiosManager
+新增
+``` java
+    private void upload(String url, String filePath, Map<String, String> uploadParams,
+                        Map<String, String> heads, StringCallback callback, String contentDispositionName) {
+        PostFormBuilder builder = OkHttpUtils.post().url(url).params(uploadParams).headers(heads);
+        builder.addFile(contentDispositionName, AppUtils.getFileName(filePath), new File
+            (filePath));
+        builder.build().execute(callback);
+    }
+```
 
 #### com.eros.framework.manager.impl.AxiosManager#upload
 修改为
 ``` java
+    public void upload(String url, List<String> fileMap, Map<String, String> uploadParams,
+                       Map<String, String> heads) {
+        if (fileMap == null) {
+            return;
+        }
+        UploadImageCallback callback = new UploadImageCallback(fileMap.size());
+        if (uploadParams.containsKey("ContentDispositionName")) {
+            String contentDispositionName = uploadParams.get("ContentDispositionName");
+            uploadParams.remove("ContentDispositionName");
+            for (String filePath : fileMap) {
+                upload(url, filePath, uploadParams, heads, callback, contentDispositionName);
+            }
+        } else {
+            for (String filePath : fileMap) {
+                upload(url, filePath, uploadParams, heads, callback);
+            }
+        }
+    }
+```
+
+#### com.eros.framework.manager.impl.AxiosManager#upload（重载方法，与上方法参数不同）
+修改为
+``` java
     private void upload(String url, String filePath, Map<String, String> uploadParams,
                         Map<String, String> heads, StringCallback callback) {
-        String ContentDispositionName=uploadParams.get("ContentDispositionName");
-        //uploadParams.remove("ContentDispositionName");
         PostFormBuilder builder = OkHttpUtils.post().url(url).params(uploadParams).headers(heads);
-        String ext = AppUtils.getFileExtName(filePath);
-        System.out.println(AppUtils.getFileName(filePath));
-        builder.addFile(ContentDispositionName, AppUtils.getFileName(filePath), new File
-                (filePath));
+        builder.addFile("file", AppUtils.getFileName(filePath), new File(filePath));
         builder.build().execute(callback);
     }
 ```
-    
-
 
 #### \platforms\android\WeexFrameworkWrapper\wxframework\eros-framework\src\main\res\xml\app_config.xml
 添加
